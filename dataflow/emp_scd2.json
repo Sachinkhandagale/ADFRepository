@@ -1,0 +1,249 @@
+{
+	"name": "emp_scd2",
+	"properties": {
+		"type": "MappingDataFlow",
+		"typeProperties": {
+			"sources": [
+				{
+					"dataset": {
+						"referenceName": "EmployeeFiles",
+						"type": "DatasetReference"
+					},
+					"name": "EmpSrcFile"
+				},
+				{
+					"dataset": {
+						"referenceName": "DimEmp",
+						"type": "DatasetReference"
+					},
+					"name": "srcdimemp"
+				}
+			],
+			"sinks": [
+				{
+					"dataset": {
+						"referenceName": "DimEmp",
+						"type": "DatasetReference"
+					},
+					"name": "SinkNew"
+				},
+				{
+					"dataset": {
+						"referenceName": "DimEmp",
+						"type": "DatasetReference"
+					},
+					"name": "sinkUpdates"
+				},
+				{
+					"dataset": {
+						"referenceName": "DimEmp",
+						"type": "DatasetReference"
+					},
+					"name": "sinkInactive"
+				}
+			],
+			"transformations": [
+				{
+					"name": "emplookup"
+				},
+				{
+					"name": "derivedColumn"
+				},
+				{
+					"name": "Nullfilter"
+				},
+				{
+					"name": "selectColumns"
+				},
+				{
+					"name": "split1"
+				},
+				{
+					"name": "derivedColumn1"
+				},
+				{
+					"name": "selectNameNormalization"
+				},
+				{
+					"name": "checkforchanges"
+				},
+				{
+					"name": "SetAttrsUpdate"
+				},
+				{
+					"name": "SetAttrsInactive"
+				},
+				{
+					"name": "InactiveFields"
+				},
+				{
+					"name": "alterRow1"
+				}
+			],
+			"scriptLines": [
+				"source(output(",
+				"          {Emp Id} as string,",
+				"          {Emp Name} as string,",
+				"          {Emp city} as string,",
+				"          {start date} as string,",
+				"          {end date} as string",
+				"     ),",
+				"     allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     ignoreNoFilesFound: false,",
+				"     moveFiles: ['','Move']) ~> EmpSrcFile",
+				"source(output(",
+				"          emp_id as integer,",
+				"          surrogatekey as string,",
+				"          emp_name as string,",
+				"          emp_city as string,",
+				"          start_date as timestamp,",
+				"          end_date as timestamp,",
+				"          active_flag as string,",
+				"          update_date as timestamp",
+				"     ),",
+				"     allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     isolationLevel: 'READ_UNCOMMITTED',",
+				"     format: 'table') ~> srcdimemp",
+				"derivedColumn, srcdimemp lookup({Emp Id} == emp_id,",
+				"     multiple: false,",
+				"     pickup: 'any',",
+				"     broadcast: 'auto')~> emplookup",
+				"Nullfilter derive({Emp Id} = toInteger({Emp Id}),",
+				"          {start date} = toDate({start date},'dd/mm/yyyy','mm-dd-yyyy'),",
+				"          {end date} = toDate({end date},'dd/mm/yyyy')) ~> derivedColumn",
+				"EmpSrcFile filter(!isNull({Emp Id})) ~> Nullfilter",
+				"emplookup select(mapColumn(",
+				"          emp_id = {Emp Id},",
+				"          emp_name = {Emp Name},",
+				"          emp_city = {Emp city},",
+				"          start_date = {start date},",
+				"          end_date = {end date},",
+				"          surrogatekey,",
+				"          active_flag,",
+				"          update_date",
+				"     ),",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true) ~> selectColumns",
+				"selectColumns split(isNull(active_flag),",
+				"     disjoint: false) ~> split1@(NewRow, CheckForUpdates)",
+				"split1@NewRow derive(active_flag = 1,",
+				"          surrogatekey = crc32(emp_id)) ~> derivedColumn1",
+				"split1@CheckForUpdates select(mapColumn(",
+				"          emp_id,",
+				"          emp_name,",
+				"          emp_city,",
+				"          start_date,",
+				"          end_date,",
+				"          surrogatekey,",
+				"          active_flag,",
+				"          update_date",
+				"     ),",
+				"     skipDuplicateMapInputs: false,",
+				"     skipDuplicateMapOutputs: false) ~> selectNameNormalization",
+				"selectNameNormalization, srcdimemp exists(selectNameNormalization@emp_id == srcdimemp@emp_id &&\r",
+				"(selectNameNormalization@emp_name != srcdimemp@emp_name ||\r",
+				"selectNameNormalization@emp_city != srcdimemp@emp_city),",
+				"     negate:false,",
+				"     broadcast: 'auto')~> checkforchanges",
+				"checkforchanges derive(active_flag = 0,",
+				"          end_date = currentTimestamp()) ~> SetAttrsUpdate",
+				"checkforchanges derive(active_flag = 1) ~> SetAttrsInactive",
+				"SetAttrsUpdate select(mapColumn(",
+				"          emp_id,",
+				"          end_date,",
+				"          active_flag,",
+				"          update_date",
+				"     ),",
+				"     skipDuplicateMapInputs: false,",
+				"     skipDuplicateMapOutputs: false) ~> InactiveFields",
+				"InactiveFields alterRow(updateIf(true())) ~> alterRow1",
+				"derivedColumn1 sink(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     input(",
+				"          emp_id as integer,",
+				"          surrogatekey as string,",
+				"          emp_name as string,",
+				"          emp_city as string,",
+				"          start_date as timestamp,",
+				"          end_date as timestamp,",
+				"          active_flag as string,",
+				"          update_date as timestamp",
+				"     ),",
+				"     deletable:false,",
+				"     insertable:true,",
+				"     updateable:false,",
+				"     upsertable:false,",
+				"     format: 'table',",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true,",
+				"     errorHandlingOption: 'stopOnFirstError',",
+				"     mapColumn(",
+				"          emp_id,",
+				"          surrogatekey,",
+				"          emp_name,",
+				"          emp_city,",
+				"          start_date,",
+				"          end_date,",
+				"          active_flag,",
+				"          update_date",
+				"     )) ~> SinkNew",
+				"SetAttrsInactive sink(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     input(",
+				"          emp_id as integer,",
+				"          surrogatekey as string,",
+				"          emp_name as string,",
+				"          emp_city as string,",
+				"          start_date as timestamp,",
+				"          end_date as timestamp,",
+				"          active_flag as string,",
+				"          update_date as timestamp",
+				"     ),",
+				"     deletable:false,",
+				"     insertable:true,",
+				"     updateable:false,",
+				"     upsertable:false,",
+				"     format: 'table',",
+				"     batchSize: 50,",
+				"     errorHandlingOption: 'stopOnFirstError',",
+				"     mapColumn(",
+				"          emp_id,",
+				"          surrogatekey,",
+				"          emp_name,",
+				"          emp_city,",
+				"          start_date,",
+				"          end_date,",
+				"          active_flag,",
+				"          update_date",
+				"     )) ~> sinkUpdates",
+				"alterRow1 sink(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     input(",
+				"          emp_id as integer,",
+				"          surrogatekey as string,",
+				"          emp_name as string,",
+				"          emp_city as string,",
+				"          start_date as timestamp,",
+				"          end_date as timestamp,",
+				"          active_flag as string,",
+				"          update_date as timestamp",
+				"     ),",
+				"     deletable:false,",
+				"     insertable:false,",
+				"     updateable:true,",
+				"     upsertable:false,",
+				"     keys:['emp_id'],",
+				"     format: 'table',",
+				"     errorHandlingOption: 'stopOnFirstError',",
+				"     mapColumn(",
+				"          emp_id,",
+				"          end_date,",
+				"          active_flag,",
+				"          update_date",
+				"     )) ~> sinkInactive"
+			]
+		}
+	}
+}

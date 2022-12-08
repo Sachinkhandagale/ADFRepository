@@ -1,0 +1,9 @@
+{
+	"name": "covid-reporting-sachin",
+	"location": "germanywestcentral",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "944e062e-3872-49c4-8ab7-7253fa2d5a1d",
+		"tenantId": "76a2ae5a-9f00-4f6b-95ed-5d33d77c4d61"
+	}
+}
